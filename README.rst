@@ -1,6 +1,9 @@
 Header fixer
 ============
 
+Usage
+=====
+
 Fixes header semantic hierarchy in HTML text.
 
 .. code-block:: php
@@ -15,3 +18,11 @@ Options are:
  - ``true`` is the *relocate orphans* options, if set to true, when a title is
    the single one at his own level, with no siblings, it will be put at a higher
    level side by side its parent.
+
+TODOLIST
+========
+
+- implement a generic twig filter
+- implement a drupal 7 module (another repo, including jolitypo)
+- implement a drupal 8 module (another repo, including jolitypo)
+
