@@ -7,7 +7,7 @@ final class Header implements \IteratorAggregate
     /**
      * Regex that extract the full table of contents of an HTML input.
      */
-    const HEADERS_REGEX = '/<h([1-6])>(.*?)<\/h[1-6]>/ims';
+    const HEADERS_REGEX = '/<h([1-6]+)>(.*?)<\/h[1-6]+>/ims';
 
     /**
      * Find all headers in text
@@ -19,11 +19,51 @@ final class Header implements \IteratorAggregate
         $matches = [];
         $parent = new Header();
         if (\preg_match_all(self::HEADERS_REGEX, $text, $matches, PREG_OFFSET_CAPTURE)) {
-            foreach ($matches[1] as $index => $match) {
-                $parent->append(new Header((int)$match[1], strlen($match[0]), (int)$matches[1][$index][0], $matches[2][$index][0]));
+            foreach ($matches[0] as $index => $match) {
+                $parent->append(new Header((int)$match[1], \strlen($match[0]), (int)$matches[1][$index][0], $matches[2][$index][0]));
             }
         }
         return $parent;
+    }
+
+    /**
+     * Find all headers in text and fix semantical hierarchy
+     *
+     * @param string $text
+     *   Original text to fix
+     * @param int $delta
+     *   Per default 0. If you need your headings to semantically start with h3
+     *   intead of h1 for example, set 2 here, if you with to start with h2, set
+     *   1, etc..
+     * @param bool $relocateOrphans
+     *   If set to true, when a heading is alone (has no siblings at the same level)
+     *   exists then it's reattached to its parent in the tree.
+     *
+     * @return string
+     *   Fixed text
+     */
+    public static function fixText(string $text, int $delta = 0, bool $relocateOrphans = false) : string
+    {
+        $headers = self::find($text);
+        $headers->fix($delta, $relocateOrphans);
+
+        foreach ($headers->getRecursiveReverseIterator() as $header) {
+            $realLevel = $header->getRealLevel();
+
+            // Use a substring to ensure that if the string length change, we do
+            // not squash existing text around or leave cruft in text.
+            $substring = \strtr(
+                \substr($text, $header->offset, $header->length),
+                [
+                    '<h'.$header->userLevel.'>' => '<h'.$realLevel.'>',
+                    '</h'.$header->userLevel.'>' => '</h'.$realLevel.'>'
+                ]
+            );
+
+            $text = substr_replace($text, $substring, $header->offset, $header->length);
+        }
+
+        return $text;
     }
 
     private $length = 0;
@@ -70,6 +110,19 @@ final class Header implements \IteratorAggregate
         return $this->userLevel;
     }
 
+    /**
+     * Get resursive reverse iterator for proceeding to replacements
+     *
+     * @return Header[]
+     */
+    public function getRecursiveReverseIterator()
+    {
+        foreach (\array_reverse($this->children) as $child) {
+            yield from $child->getRecursiveReverseIterator();
+            yield $child;
+        }
+    }
+
     public function getIterator()
     {
         foreach ($this->children as $child) {
@@ -83,7 +136,7 @@ final class Header implements \IteratorAggregate
     private function append(Header $header)
     {
         if ($this->children) {
-            $latest = end($this->children);
+            $latest = \end($this->children);
             if ($latest->userLevel < $header->userLevel) {
                 $latest->append($header);
                 return;
