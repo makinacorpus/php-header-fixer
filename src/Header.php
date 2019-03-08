@@ -2,7 +2,7 @@
 
 namespace MakinaCorpus\HeaderFixer;
 
-final class Header implements \IteratorAggregate
+final class Header implements \IteratorAggregate, \Countable
 {
     /**
      * Regex that extract the full table of contents of an HTML input.
@@ -42,20 +42,21 @@ final class Header implements \IteratorAggregate
      * @return string
      *   Fixed text
      */
-    public static function fixText(string $text, int $delta = 0, bool $relocateOrphans = false) : string
+    public static function fixText(string $text, int $delta = 0, bool $relocateOrphans = false) : TextWithHeader
     {
         $headers = self::find($text);
         $headers->fix($delta, $relocateOrphans);
 
         foreach ($headers->getRecursiveReverseIterator() as $header) {
             $realLevel = $header->getRealLevel();
+            $id = $header->getId();
 
             // Use a substring to ensure that if the string length change, we do
             // not squash existing text around or leave cruft in text.
             $substring = \strtr(
                 \substr($text, $header->offset, $header->length),
                 [
-                    '<h'.$header->userLevel.'>' => '<h'.$realLevel.'>',
+                    '<h'.$header->userLevel.'>' => '<h'.$realLevel.' id="'.$id.'">',
                     '</h'.$header->userLevel.'>' => '</h'.$realLevel.'>'
                 ]
             );
@@ -63,7 +64,7 @@ final class Header implements \IteratorAggregate
             $text = substr_replace($text, $substring, $header->offset, $header->length);
         }
 
-        return $text;
+        return new TextWithHeader($headers, $text);
     }
 
     private $length = 0;
@@ -108,6 +109,30 @@ final class Header implements \IteratorAggregate
     public function getUserLevel() : int
     {
         return $this->userLevel;
+    }
+
+    /**
+     * @return null|Header
+     */
+    public function getFirstChild()
+    {
+        foreach ($this->children as $child) {
+            return $child;
+        }
+        return null;
+    }
+
+    public function count()
+    {
+        return \count($this->children);
+    }
+
+    /**
+     * Get identifier for anchor
+     */
+    public function getId(): string
+    {
+        return 'section-'.$this->getUserRepresentation().'-'.$this->getPosition();
     }
 
     /**
@@ -186,7 +211,6 @@ final class Header implements \IteratorAggregate
         if ($this->parent) {
             return (int)array_search($this, $this->parent->children);
         }
-
         return 0;
     }
 
@@ -239,5 +263,32 @@ final class Header implements \IteratorAggregate
         foreach ($this->children as $child) {
             $child->fix($delta, $relocateOrphans);
         }
+    }
+}
+
+final class TextWithHeader
+{
+    private $header;
+    private $text;
+
+    public function __construct(Header $header, string $text)
+    {
+        $this->header = $header;
+        $this->text = $text;
+    }
+
+    public function getHeader(): Header
+    {
+        return $this->header;
+    }
+
+    public function getText(): string
+    {
+        return $this->text;
+    }
+
+    public function __toString(): string
+    {
+        return $this->text;
     }
 }
