@@ -5,9 +5,14 @@ namespace MakinaCorpus\HeaderFixer;
 final class Header implements \IteratorAggregate, \Countable
 {
     /**
+     * Default identifier prefix if none given.
+     */
+    const ID_PREFIX = 'section-';
+
+    /**
      * Regex that extract the full table of contents of an HTML input.
      */
-    const HEADERS_REGEX = '/<h([1-6]+)>(.*?)<\/h[1-6]+>/ims';
+    const HEADERS_REGEX = '/<h([\d]+)(.*?)>(.*?)<\/h[\d]+>/ims';
 
     /**
      * Find all headers in text
@@ -42,21 +47,27 @@ final class Header implements \IteratorAggregate, \Countable
      * @return string
      *   Fixed text
      */
-    public static function fixText(string $text, int $delta = 0, bool $relocateOrphans = false) : TextWithHeader
-    {
+    public static function fixText(
+        string $text,
+        int $delta = 0,
+        bool $relocateOrphans = false,
+        bool $addId = false,
+        ?string $idPrefix = null
+    ) : TextWithHeader {
         $headers = self::find($text);
         $headers->fix($delta, $relocateOrphans);
 
         foreach ($headers->getRecursiveReverseIterator() as $header) {
             $realLevel = $header->getRealLevel();
-            $id = $header->getId();
+            $attributes = $header->getAttributes();
+            $id = $addId ? ' id="' . $header->getId($idPrefix) . '"' : '';
 
             // Use a substring to ensure that if the string length change, we do
             // not squash existing text around or leave cruft in text.
             $substring = \strtr(
                 \substr($text, $header->offset, $header->length),
                 [
-                    '<h'.$header->userLevel.'>' => '<h'.$realLevel.' id="'.$id.'">',
+                    '<h'.$header->userLevel.'>' => '<h'.$realLevel.$id.$attributes.'>',
                     '</h'.$header->userLevel.'>' => '</h'.$realLevel.'>'
                 ]
             );
@@ -67,28 +78,32 @@ final class Header implements \IteratorAggregate, \Countable
         return new TextWithHeader($headers, $text);
     }
 
-    private $length = 0;
-    private $offset = 0;
-    private $text = '';
-    private $computedLevel;
-    private $userLevel = 0;
+    private int $length = 0;
+    private int $offset = 0;
+    private string $text = '';
+    private string $attributes = '';
+    private bool $hasId = false;
+    private ?int $computedLevel = null;
+    private int $userLevel = 0;
+    private ?Header $parent = null;
+    private array $children = [];
 
-    /**
-     * @var null|Header
-     */
-    private $parent;
-
-    /**
-     * @var Header[]
-     */
-    private $children = [];
-
-    public function __construct(int $offset = 0, int $length = 0, int $userLevel = 0, string $text = '')
-    {
+    public function __construct(
+        int $offset = 0,
+        int $length = 0,
+        int $userLevel = 0,
+        string $text = '',
+        ?string $attributes = null
+    ) {
         $this->offset = $offset;
         $this->length = $length;
         $this->userLevel = $userLevel;
         $this->text = $text;
+        $this->attributes = $attributes ? (' ' . \trim($attributes)) : '';
+
+        if ($attributes && false !== \strpos($attributes, 'id=')) {
+            $this->hasId = true;
+        }
     }
 
     public function getLength() : int
@@ -130,9 +145,17 @@ final class Header implements \IteratorAggregate, \Countable
     /**
      * Get identifier for anchor
      */
-    public function getId(): string
+    public function getId(?string $prefix = null): string
     {
-        return 'section-'.$this->getUserRepresentation().'-'.$this->getPosition();
+        return ($prefix ?? self::ID_PREFIX) . $this->getUserRepresentation() . '-' . $this->getPosition();
+    }
+
+    /**
+     * Get attributes
+     */
+    public function getAttributes(): string
+    {
+        return $this->attributes;
     }
 
     /**
@@ -243,8 +266,12 @@ final class Header implements \IteratorAggregate, \Countable
         return $delta;
     }
 
-    public function fix(int $delta = 0, bool $relocateOrphans = false)
-    {
+    public function fix(
+        int $delta = 0,
+        bool $relocateOrphans = false,
+        bool $addId = false,
+        ?string $idPrefix = null
+    ) {
         // Start by relocating itself first: we can relocate ourselves only
         // if the current parent has a parent, because we are going to become
         // our own parent sibling, we must insert ourself somewhere
@@ -261,34 +288,7 @@ final class Header implements \IteratorAggregate, \Countable
 
         /** @var \MakinaCorpus\HeaderFixer\Header $child */
         foreach ($this->children as $child) {
-            $child->fix($delta, $relocateOrphans);
+            $child->fix($delta, $relocateOrphans, $addId, $idPrefix);
         }
-    }
-}
-
-final class TextWithHeader
-{
-    private $header;
-    private $text;
-
-    public function __construct(Header $header, string $text)
-    {
-        $this->header = $header;
-        $this->text = $text;
-    }
-
-    public function getHeader(): Header
-    {
-        return $this->header;
-    }
-
-    public function getText(): string
-    {
-        return $this->text;
-    }
-
-    public function __toString(): string
-    {
-        return $this->text;
     }
 }
