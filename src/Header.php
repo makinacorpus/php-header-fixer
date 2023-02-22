@@ -25,7 +25,15 @@ final class Header implements \IteratorAggregate, \Countable
         $parent = new Header();
         if (\preg_match_all(self::HEADERS_REGEX, $text, $matches, PREG_OFFSET_CAPTURE)) {
             foreach ($matches[0] as $index => $match) {
-                $parent->append(new Header((int)$match[1], \strlen($match[0]), (int)$matches[1][$index][0], $matches[2][$index][0]));
+                $parent->append(
+                    new Header(
+                        (int) $match[1],
+                        \strlen($match[0]),
+                        (int) $matches[1][$index][0],
+                        $matches[3][$index][0],
+                        $matches[2][$index][0]
+                    )
+                );
             }
         }
         return $parent;
@@ -55,24 +63,21 @@ final class Header implements \IteratorAggregate, \Countable
         ?string $idPrefix = null
     ) : TextWithHeader {
         $headers = self::find($text);
-        $headers->fix($delta, $relocateOrphans);
+        $headers->fix($delta, $relocateOrphans, $addId, $idPrefix);
 
         foreach ($headers->getRecursiveReverseIterator() as $header) {
             $realLevel = $header->getRealLevel();
             $attributes = $header->getAttributes();
             $id = $addId ? ' id="' . $header->getId($idPrefix) . '"' : '';
 
-            // Use a substring to ensure that if the string length change, we do
-            // not squash existing text around or leave cruft in text.
-            $substring = \strtr(
-                \substr($text, $header->offset, $header->length),
-                [
-                    '<h'.$header->userLevel.'>' => '<h'.$realLevel.$id.$attributes.'>',
-                    '</h'.$header->userLevel.'>' => '</h'.$realLevel.'>'
-                ]
+            $text = substr_replace(
+                $text,
+                // Use a substring to ensure that if the string length change, we do
+                // not squash existing text around or leave cruft in text.
+                '<h'.$realLevel.$id.$attributes.'>'.$header->getText().'</h'.$realLevel.'>',
+                $header->offset,
+                $header->length
             );
-
-            $text = substr_replace($text, $substring, $header->offset, $header->length);
         }
 
         return new TextWithHeader($headers, $text);
@@ -137,7 +142,7 @@ final class Header implements \IteratorAggregate, \Countable
         return null;
     }
 
-    public function count()
+    public function count(): int
     {
         return \count($this->children);
     }
@@ -171,7 +176,7 @@ final class Header implements \IteratorAggregate, \Countable
         }
     }
 
-    public function getIterator()
+    public function getIterator(): \Iterator
     {
         foreach ($this->children as $child) {
             yield $child;

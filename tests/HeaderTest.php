@@ -18,6 +18,58 @@ class HeaderTest extends TestCase
         return $output;
     }
 
+    public function testAttributePreservation()
+    {
+        $input = <<<EOT
+<h2     class="foo">1 (first)</h2>
+<p>some noise</p>
+
+<h1>1 (second)</h2>
+<p>some noise</p>
+
+<h4>1 (third)</h2>
+<p>some noise</p>
+EOT;
+
+        $headers = Header::fixText($input);
+        $this->assertSame(trim(<<<EOT
+<h1 class="foo">1 (first)</h1>
+<p>some noise</p>
+
+<h1>1 (second)</h1>
+<p>some noise</p>
+
+<h2>1 (third)</h2>
+<p>some noise</p>
+EOT
+            ),
+            $headers->getText()
+        );
+    }
+
+    public function testAddId()
+    {
+        $input = <<<EOT
+<h1 class="foo">1 (first)</h2>
+EOT;
+
+        $headers = Header::fixText($input, 0, false, true);
+        $this->assertSame(trim(<<<EOT
+<h1 id="section-1-0" class="foo">1 (first)</h1>
+EOT
+            ),
+            $headers->getText()
+        );
+
+        $headers = Header::fixText($input, 0, false, true, 'foo');
+        $this->assertSame(trim(<<<EOT
+<h1 id="foo1-0" class="foo">1 (first)</h1>
+EOT
+            ),
+            $headers->getText()
+        );
+    }
+
     public function testEverything()
     {
         $input = <<<EOT
