@@ -4,14 +4,10 @@ namespace MakinaCorpus\HeaderFixer;
 
 final class TextWithHeader
 {
-    private $header;
-    private $text;
-
-    public function __construct(Header $header, string $text)
-    {
-        $this->header = $header;
-        $this->text = $text;
-    }
+    public function __construct(
+        private Header $header,
+        private string $text,
+    ) {}
 
     public function getHeader(): Header
     {

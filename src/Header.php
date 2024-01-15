@@ -14,12 +14,35 @@ final class Header implements \IteratorAggregate, \Countable
      */
     const HEADERS_REGEX = '/<h([\d]+)(.*?)>(.*?)<\/h[\d]+>/ims';
 
+    private bool $hasId = false;
+    private ?int $computedLevel = null;
+    private ?Header $parent = null;
+    private array $children = [];
+
+    public function __construct(
+        private int $offset = 0,
+        private int $length = 0,
+        private int $userLevel = 0,
+        private string $text = '',
+        private ?string $attributes = null
+    ) {
+        $this->offset = $offset;
+        $this->length = $length;
+        $this->userLevel = $userLevel;
+        $this->text = $text;
+        $this->attributes = $attributes ? (' ' . \trim($attributes)): '';
+
+        if ($attributes && false !== \strpos($attributes, 'id=')) {
+            $this->hasId = true;
+        }
+    }
+
     /**
      * Find all headers in text
      *
      * Returned object is a virtual root object that does not exist in text.
      */
-    public static function find(string $text) : Header
+    public static function find(string $text): Header
     {
         $matches = [];
         $parent = new Header();
@@ -27,11 +50,11 @@ final class Header implements \IteratorAggregate, \Countable
             foreach ($matches[0] as $index => $match) {
                 $parent->append(
                     new Header(
-                        (int) $match[1],
-                        \strlen($match[0]),
-                        (int) $matches[1][$index][0],
-                        $matches[3][$index][0],
-                        $matches[2][$index][0]
+                        attributes: $matches[2][$index][0],
+                        length: \strlen($match[0]),
+                        offset: (int) $match[1],
+                        text: $matches[3][$index][0],
+                        userLevel: (int) $matches[1][$index][0],
                     )
                 );
             }
@@ -60,10 +83,16 @@ final class Header implements \IteratorAggregate, \Countable
         int $delta = 0,
         bool $relocateOrphans = false,
         bool $addId = false,
-        ?string $idPrefix = null
-    ) : TextWithHeader {
+        ?string $idPrefix = null,
+    ): TextWithHeader {
         $headers = self::find($text);
-        $headers->fix($delta, $relocateOrphans, $addId, $idPrefix);
+
+        $headers->fix(
+            addId: $addId,
+            delta: $delta,
+            idPrefix: $idPrefix,
+            relocateOrphans: $relocateOrphans,
+        );
 
         foreach ($headers->getRecursiveReverseIterator() as $header) {
             $realLevel = $header->getRealLevel();
@@ -83,50 +112,22 @@ final class Header implements \IteratorAggregate, \Countable
         return new TextWithHeader($headers, $text);
     }
 
-    private int $length = 0;
-    private int $offset = 0;
-    private string $text = '';
-    private string $attributes = '';
-    private bool $hasId = false;
-    private ?int $computedLevel = null;
-    private int $userLevel = 0;
-    private ?Header $parent = null;
-    private array $children = [];
-
-    public function __construct(
-        int $offset = 0,
-        int $length = 0,
-        int $userLevel = 0,
-        string $text = '',
-        ?string $attributes = null
-    ) {
-        $this->offset = $offset;
-        $this->length = $length;
-        $this->userLevel = $userLevel;
-        $this->text = $text;
-        $this->attributes = $attributes ? (' ' . \trim($attributes)) : '';
-
-        if ($attributes && false !== \strpos($attributes, 'id=')) {
-            $this->hasId = true;
-        }
-    }
-
-    public function getLength() : int
+    public function getLength(): int
     {
         return $this->length;
     }
 
-    public function getOffset() : int
+    public function getOffset(): int
     {
         return $this->offset;
     }
 
-    public function getText() : string
+    public function getText(): string
     {
         return $this->text;
     }
 
-    public function getUserLevel() : int
+    public function getUserLevel(): int
     {
         return $this->userLevel;
     }
@@ -142,6 +143,7 @@ final class Header implements \IteratorAggregate, \Countable
         return null;
     }
 
+    #[\Override]
     public function count(): int
     {
         return \count($this->children);
@@ -176,6 +178,7 @@ final class Header implements \IteratorAggregate, \Countable
         }
     }
 
+    #[\Override]
     public function getIterator(): \Iterator
     {
         foreach ($this->children as $child) {
@@ -234,7 +237,7 @@ final class Header implements \IteratorAggregate, \Countable
         $header->parent = $this;
     }
 
-    private function getPosition() : int
+    private function getPosition(): int
     {
         if ($this->parent) {
             return (int)array_search($this, $this->parent->children);
@@ -242,7 +245,7 @@ final class Header implements \IteratorAggregate, \Countable
         return 0;
     }
 
-    public function getUserRepresentation(string $separator = '.') : string
+    public function getUserRepresentation(string $separator = '.'): string
     {
         if ($this->parent && $this->parent->userLevel) { // Ignore top-level "0" level
             return $this->parent->getUserRepresentation().$separator.$this->userLevel;
@@ -250,7 +253,7 @@ final class Header implements \IteratorAggregate, \Countable
         return $this->userLevel;
     }
 
-    public function getRealRepresentation(string $separator = '.') : string
+    public function getRealRepresentation(string $separator = '.'): string
     {
         if ($this->parent && $this->parent->userLevel) { // Ignore top-level "0" level
             return $this->parent->getRealRepresentation().$separator.$this->getRealLevel();
@@ -258,7 +261,7 @@ final class Header implements \IteratorAggregate, \Countable
         return $this->getRealLevel();
     }
 
-    public function getRealLevel(int $delta = 0) : int
+    public function getRealLevel(int $delta = 0): int
     {
         if (null !== $this->computedLevel) {
             return $this->computedLevel;
@@ -275,7 +278,7 @@ final class Header implements \IteratorAggregate, \Countable
         int $delta = 0,
         bool $relocateOrphans = false,
         bool $addId = false,
-        ?string $idPrefix = null
+        ?string $idPrefix = null,
     ) {
         // Start by relocating itself first: we can relocate ourselves only
         // if the current parent has a parent, because we are going to become
@@ -291,9 +294,15 @@ final class Header implements \IteratorAggregate, \Countable
 
         $this->computedLevel = $this->getRealLevel($delta);
 
-        /** @var \MakinaCorpus\HeaderFixer\Header $child */
         foreach ($this->children as $child) {
-            $child->fix($delta, $relocateOrphans, $addId, $idPrefix);
+            \assert($child instanceof Header);
+
+            $child->fix(
+                addId: $addId,
+                delta: $delta,
+                idPrefix: $idPrefix,
+                relocateOrphans: $relocateOrphans,
+            );
         }
     }
 }
